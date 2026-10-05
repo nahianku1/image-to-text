@@ -45,6 +45,10 @@ Checkboxes and radio selections use the selected option's actual text, such as `
 
 Only filled-in text inputs and clearly marked selections belong in `fields`. Text inputs do not need tick marks, but checkbox/radio options must have a visible selection mark and readable option text. Blank inputs and unticked options remain only in `rawText`.
 
+Paired numeric values inside one labeled field are preserved together and comma-separated—for example, `22.847964, 89.545600`—with exactly six decimal places. Extra decimal digits are truncated, not rounded. If Groq returns only the first numeric value for an `Email` field but `rawText` contains the adjacent second coordinate, the client repairs the field to include both values. It leaves the value as a six-decimal coordinate when the second number is not present in the transcription.
+
+Color/code values follow the requested compact format: `Red 5295` is rendered as `Red5295`, including when the same field contains additional lines such as `@Sohel`.
+
 For repeatability, requests use `temperature: 0`, `top_p: 1`, and a fixed `seed: 42`. The prompt specifies a fixed reading order, a completeness/correctness check, and three examples covering both mobile numbers, blank inputs, address grouping, and selected versus unticked options. The same image produces the same request body. Groq describes seeded generation as best-effort deterministic; identical model output is not guaranteed, especially when the provider's backend changes. See the [Groq API reference](https://console.groq.com/docs/api-reference).
 
 The extraction prompt uses input boundaries, rows, columns, and group labels to associate values. Blank fields must not borrow nearby values: an empty father's name stays omitted while populated connection address boxes remain under their own address label. Ambiguous pairings are omitted with a warning, preserving readable text in `rawText`.

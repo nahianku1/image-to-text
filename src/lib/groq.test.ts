@@ -71,6 +71,30 @@ describe('browser Groq extraction', () => {
     expect(examples[2].fields.slice(0, 2).map((field: { value: string }) => field.value)).toEqual(['01700000000', '01700000000']);
   });
 
+  it('instructs the model to preserve paired numeric values in one field', async () => {
+    await extractForm({ image: IMAGE, apiKey: KEY });
+    const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(payload.messages[0].content).toContain('complete pair in that same field value');
+    expect(payload.messages[0].content).toContain('22.847964589 and 89.545600');
+    expect(payload.messages[0].content).toContain('22.847964, 89.545600');
+    expect(payload.messages[0].content).toContain('Never keep only the first number');
+    expect(payload.messages[0].content).toContain('never return only');
+  });
+
+  it('repairs a one-number Email coordinate value from the model raw transcription', () => {
+    const result = normalizeExtraction({
+      fields: [{ label: 'Email', value: '22.847964589', section: 'General' }],
+      rawText: 'Email: 22.847964589, 89.545600',
+      warnings: [],
+    });
+    expect(result.fields[0].value).toBe('22.847964, 89.545600');
+    expect(normalizeExtraction({
+      fields: [{ label: 'Email', value: '22.847964589', section: 'General' }],
+      rawText: 'Email: 22.847964589',
+      warnings: [],
+    }).fields[0].value).toBe('22.847964');
+  });
+
   it('omits empty values, retains Bengali digits and literal negative answers, and removes arbitrary properties', () => {
     const result = normalizeExtraction({
       ...data,
@@ -106,6 +130,22 @@ describe('browser Groq extraction', () => {
     });
     expect(result.fields.map((field) => field.value)).toEqual(['Own', 'OWN', '  Own  ', 'No', 'Checked']);
     expect(result.rawText).toBe(data.rawText);
+  });
+
+  it('joins the Red color code without an inserted space', () => {
+    const result = normalizeExtraction({
+      ...data,
+      fields: [{ label: 'Color code', value: 'Red 5295', section: 'General' }],
+    });
+    expect(result.fields[0].value).toBe('Red5295');
+    expect(normalizeExtraction({
+      ...data,
+      fields: [{ label: 'Color code', value: 'Blue 5295', section: 'General' }],
+    }).fields[0].value).toBe('Blue 5295');
+    expect(normalizeExtraction({
+      ...data,
+      fields: [{ label: 'Color code', value: 'Red 5295\n\n@Sohel', section: 'General' }],
+    }).fields[0].value).toBe('Red5295\n\n@Sohel');
   });
 
   it('validates every model field, bounded lengths and JSON structure', () => {

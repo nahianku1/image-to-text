@@ -96,6 +96,31 @@ If either box is blank or unreadable, omit only that box and retain the readable
 other number. Also read an adjacent "NID number" and selected "Own" option as
 independent answers; neither replaces the other. Before returning JSON, check each
 row from left to right again for a populated second mobile box that was overlooked.
+When one labeled field visibly contains a pair of related coordinate or measurement
+values, preserve the complete pair in that same field value in its original order,
+separated by a comma and one space. Format each coordinate to exactly six digits
+after the decimal point. If more than six decimal digits are visible, truncate the
+extra digits (do not round); if fewer are visible, pad with zeros. Never keep only the first number, silently discard the second,
+or turn the second number into an unrelated field. For example, if a field labeled
+"Email" visibly contains 22.847964589 and 89.545600, return exactly
+{"label":"Email","value":"22.847964, 89.545600","section":"General"}
+for that field (using the actual visible section when present). This applies to
+latitude/longitude, coordinates, paired measurements, and similar values printed
+inside one labeled field. Preserve the visible sign and leading zeros while applying
+the six-decimal formatting; do not translate or guess missing members. If the two
+members are separated across two clearly labeled fields, keep them as two fields;
+only combine values that visibly belong to one labeled field.
+After locating a field, scan its entire input box from left to right and top to
+bottom until the box ends. Do not stop extraction after the first decimal number.
+If a second number is visible anywhere in that same box or on the same labeled row,
+include it in the value, comma-separated. Check the right side of the Email field
+and any continuation line before finalizing the value. The exact example
+22.847964, 89.545600 is two values, not one value; never return only
+22.847964 when 89.545600 is visible in the same labeled field.
+When the visible value is a color/code combination written as a word followed by
+digits, preserve it as one compact value with no inserted space. For example,
+"Red 5295" must be returned and displayed as "Red5295". Do not treat the number
+as a separate field and do not insert a space between the word and its code.
 Literal values such as "0", "০", "No", "না", and "N/A" are populated values only
 when visibly filled in as actual answers, not when merely printed as options,
 placeholders, or examples. Do not treat these actual answers as blank.
@@ -188,6 +213,26 @@ function text(value: unknown, maximumLength: number, trim = false): string {
   return trim ? cleaned.trim() : cleaned;
 }
 
+function formatCoordinate(value: string): string {
+  const match = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(value.trim());
+  if (!match || !match[3]) return value;
+  return `${match[1]}${match[2]}.${match[3].slice(0, 6).padEnd(6, '0')}`;
+}
+
+function normalizeColorCode(value: string): string {
+  return value.replace(/\bRed[ \t]+(\d+)/gi, 'Red$1');
+}
+
+function repairEmailCoordinatePair(label: string, value: string, rawText: string): string {
+  if (!/^e?mail$/i.test(label.trim()) || !/^[+-]?\d+(?:\.\d+)?$/.test(value.trim())) return value;
+  const first = value.trim();
+  const escapedFirst = first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const number = '[+-]?\\d+(?:\\.\\d+)?';
+  const pairPattern = new RegExp(`${escapedFirst}\\s*(?:[,;\\/|]|\\s+)\\s*(${number})`, 'u');
+  const match = pairPattern.exec(rawText);
+  return match?.[1] ? `${formatCoordinate(first)}, ${formatCoordinate(match[1])}` : formatCoordinate(first);
+}
+
 /** Validate all fields before filtering blanks; copy only known scalar properties. */
 export function normalizeExtraction(input: unknown, model: string = GROQ_MODEL): ExtractionResult {
   let result = input;
@@ -219,8 +264,9 @@ export function normalizeExtraction(input: unknown, model: string = GROQ_MODEL):
     if (!label) throw invalidExtraction();
     const extractedValue = text(field.value, 10_000);
     // "Own" is the selected option itself, not a group requiring a guessed answer.
-    const value = /^own$/i.test(label) && /^checked$/i.test(extractedValue.trim())
-      ? label : /^red\s+$/i.test(extractedValue) ? extractedValue.trimEnd() : extractedValue;
+    const normalizedValue = /^own$/i.test(label) && /^checked$/i.test(extractedValue.trim())
+      ? label : /^red\s+$/i.test(extractedValue) ? extractedValue.trimEnd() : normalizeColorCode(extractedValue);
+    const value = repairEmailCoordinatePair(label, normalizedValue, rawText);
     const section = field.section === undefined || field.section === null
       ? 'General' : text(field.section, 240, true) || 'General';
     validatedFields.push({ id: `field-${validatedFields.length + 1}`, label, value, section });
