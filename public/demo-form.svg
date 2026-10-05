@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="960" viewBox="0 0 760 960">
+  <rect width="760" height="960" rx="4" fill="#fffefb"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <rect x="58" y="55" width="38" height="38" rx="9" fill="#174c43"/>
+    <path d="M69 74h16m-8-8v16" stroke="#fff" stroke-width="3"/>
+    <text x="109" y="81" fill="#174c43" font-size="24" font-weight="700">GREENFIELD COMMUNITY</text>
+    <text x="59" y="144" fill="#203c35" font-size="31" font-weight="700">Member registration</text>
+    <text x="59" y="176" fill="#718078" font-size="14">Please complete all fields below. This is a fictional sample form.</text>
+    <path d="M59 200h642" stroke="#dce3dc"/>
+    <text x="59" y="241" fill="#174c43" font-size="13" font-weight="700" letter-spacing="2">01  PERSONAL INFORMATION</text>
+    <g fill="#6c7770" font-size="13">
+      <text x="59" y="281">Full name</text><text x="59" y="368">Date of birth</text><text x="388" y="368">Occupation</text>
+      <text x="59" y="493">Email address</text><text x="59" y="580">Phone number</text>
+      <text x="59" y="705">Street address</text><text x="59" y="792">City</text><text x="300" y="792">State</text><text x="519" y="792">ZIP code</text>
+    </g>
+    <g fill="#f6f8f3" stroke="#dce3dc">
+      <rect x="59" y="293" width="642" height="49" rx="5"/>
+      <rect x="59" y="380" width="307" height="49" rx="5"/><rect x="388" y="380" width="313" height="49" rx="5"/>
+      <rect x="59" y="505" width="642" height="49" rx="5"/>
+      <rect x="59" y="592" width="642" height="49" rx="5"/>
+      <rect x="59" y="717" width="642" height="49" rx="5"/>
+      <rect x="59" y="804" width="219" height="49" rx="5"/><rect x="300" y="804" width="197" height="49" rx="5"/><rect x="519" y="804" width="182" height="49" rx="5"/>
+    </g>
+    <g fill="#2c443b" font-size="20" font-style="italic">
+      <text x="75" y="325">Alex Morgan</text><text x="75" y="412">June 15, 1994</text><text x="404" y="412">Graphic designer</text>
+      <text x="75" y="537">alex.morgan@example.com</text><text x="75" y="624">(202) 555-0147</text>
+      <text x="75" y="749">123 Maple Lane</text><text x="75" y="836">Portland</text><text x="316" y="836">Oregon</text><text x="535" y="836">97205</text>
+    </g>
+    <text x="59" y="466" fill="#174c43" font-size="13" font-weight="700" letter-spacing="2">02  CONTACT DETAILS</text>
+    <text x="59" y="678" fill="#174c43" font-size="13" font-weight="700" letter-spacing="2">03  MAILING ADDRESS</text>
+    <path d="M59 884h642" stroke="#dce3dc"/>
+    <text x="59" y="915" fill="#879087" font-size="12">FICTIONAL DEMO · No real personal information · FormLens</text>
+  </g>
+</svg>
