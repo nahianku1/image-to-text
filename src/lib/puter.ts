@@ -1,11 +1,23 @@
 import type { ExtractionResult } from '../types';
 
-export const GROQ_MODEL = 'qwen/qwen3.8-27b';
-export const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
+export const PUTER_MODEL = 'mistral-ocr-latest';
+export const PUTER_PROVIDER = 'mistral';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_BASE64_LENGTH = Math.ceil(MAX_IMAGE_BYTES / 3) * 4;
 const REQUEST_TIMEOUT_MS = 45_000;
+
+interface PuterAI {
+  img2txt(source: string, options: Record<string, unknown>): Promise<unknown>;
+}
+
+function getPuterAI(): PuterAI {
+  const candidate = (globalThis as { puter?: { ai?: PuterAI } }).puter?.ai;
+  if (!candidate?.img2txt) {
+    throw new ExtractionError('PUTER_NOT_READY', 'Puter.js is still loading. Wait a moment and try again.');
+  }
+  return candidate;
+}
 
 const EXTRACTION_EXAMPLES = [
   {
@@ -189,6 +201,35 @@ in the exact JSON shape above. Never copy example labels, values, section headin
 or explanations unless those exact details are actually visible in the current image.
 ${JSON.stringify(EXTRACTION_EXAMPLES)}`;
 
+const DOCUMENT_ANNOTATION_FORMAT = {
+  type: 'json_schema',
+  json_schema: {
+    name: 'form_extraction',
+    schema: {
+      type: 'object',
+      properties: {
+        fields: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              label: { type: 'string' },
+              value: { type: 'string' },
+              section: { type: 'string' },
+            },
+            required: ['label', 'value', 'section'],
+            additionalProperties: false,
+          },
+        },
+        rawText: { type: 'string' },
+        warnings: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['fields', 'rawText', 'warnings'],
+      additionalProperties: false,
+    },
+  },
+} as const;
+
 class ExtractionError extends Error {
   constructor(readonly code: string, message: string) {
     super(message);
@@ -234,7 +275,7 @@ function repairEmailCoordinatePair(label: string, value: string, rawText: string
 }
 
 /** Validate all fields before filtering blanks; copy only known scalar properties. */
-export function normalizeExtraction(input: unknown, model: string = GROQ_MODEL): ExtractionResult {
+export function normalizeExtraction(input: unknown, model: string = PUTER_MODEL): ExtractionResult {
   let result = input;
   if (typeof result === 'string') {
     if (result.length > 160_000) throw invalidExtraction();
@@ -326,40 +367,40 @@ function cancellationError(): ExtractionError {
   return error;
 }
 
-function providerError(status: number): ExtractionError {
-  if (status === 401 || status === 403) {
-    return new ExtractionError('PROVIDER_AUTH_ERROR', 'Groq could not authenticate your API key. Check the key and its permissions.');
+function puterError(error: unknown): ExtractionError {
+  const details = error !== null && typeof error === 'object' ? error as Record<string, unknown> : {};
+  const code = typeof details.code === 'string' ? details.code.toLowerCase() : '';
+  const name = typeof details.name === 'string' ? details.name.toLowerCase() : '';
+  const status = typeof details.status === 'number' ? details.status : undefined;
+  if (code === 'input_too_large' || code === 'storage_limit_reached') {
+    return new ExtractionError('IMAGE_TOO_LARGE', 'The image must be 8 MiB or smaller.');
   }
-  if (status === 402) {
-    return new ExtractionError('PROVIDER_QUOTA_EXCEEDED', 'Your Groq quota is exhausted. Check your account usage and billing.');
+  if (code === 'cancelled' || code === 'canceled' || code === 'abort' || code === 'aborted'
+      || name === 'aborterror' || name === 'cancellationerror') {
+    return cancellationError();
   }
-  if (status === 429) {
-    return new ExtractionError('PROVIDER_RATE_LIMIT', 'Groq is busy or your rate limit has been reached. Wait a minute and try again; check your Groq usage if this continues.');
+  if (code === 'timeout' || code === 'timed_out' || status === 408 || status === 504) return timeoutError();
+  if (code === 'bad_request' || status === 400 || status === 422) {
+    return new ExtractionError('PROVIDER_REQUEST_ERROR', 'Puter could not process this image with the selected model. Try a clearer JPEG, PNG, or WebP image.');
   }
-  if (status === 408 || status === 504) return timeoutError();
-  if (status === 400 || status === 404 || status === 422) {
-    return new ExtractionError('PROVIDER_REQUEST_ERROR', 'Groq could not process this image with the selected model. Try a clearer JPEG, PNG, or WebP image.');
+  if (code === 'insufficient_funds' || status === 402) {
+    return new ExtractionError('PROVIDER_QUOTA_EXCEEDED', 'Your Puter quota or funds are exhausted. Check your Puter account usage and billing.');
   }
-  return new ExtractionError('PROVIDER_UNAVAILABLE', 'Groq is temporarily unavailable. Please try again shortly.');
+  if (code === 'upstream' || code === 'upstream_error' || code === 'network' || code === 'network_error'
+      || code === 'service_unavailable' || status === 502 || status === 503) {
+    return new ExtractionError('PROVIDER_UNAVAILABLE', 'Puter is temporarily unavailable. Please try again shortly.');
+  }
+  return new ExtractionError('PROVIDER_CONNECTION_ERROR', 'Could not connect to Puter. Check your internet connection and try again.');
 }
 
-/** Make exactly one browser request; the key lives only in this invocation. */
-export async function extractForm({ image, apiKey, signal }: {
+/** Run one Puter extraction. Puter owns authentication and usage; no key is handled here. */
+export async function extractForm({ image, signal }: {
   image: string;
-  apiKey: string;
   signal?: AbortSignal;
 }): Promise<ExtractionResult> {
   validateImage(image);
-  if (typeof apiKey !== 'string' || !apiKey.trim()) {
-    throw new ExtractionError('MISSING_API_KEY', 'Enter your Groq API key to extract this image.');
-  }
-  const key = apiKey.trim();
-  if (key.length > 4_096 || /[\r\n]/.test(key)) {
-    throw new ExtractionError('INVALID_API_KEY', 'Enter a valid Groq API key.');
-  }
   if (signal?.aborted) throw cancellationError();
 
-  const controller = new AbortController();
   let timedOut = false;
   let cancelled = false;
   let rejectInterrupted!: (reason: ExtractionError) => void;
@@ -369,67 +410,30 @@ export async function extractForm({ image, apiKey, signal }: {
   const onAbort = () => {
     cancelled = true;
     rejectInterrupted(cancellationError());
-    controller.abort();
   };
   const timer = setTimeout(() => {
     timedOut = true;
     rejectInterrupted(timeoutError());
-    controller.abort();
   }, REQUEST_TIMEOUT_MS);
   signal?.addEventListener('abort', onAbort, { once: true });
 
   const request = async (): Promise<ExtractionResult> => {
-    const response = await fetch(GROQ_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`,
-      },
-      credentials: 'omit',
-      cache: 'no-store',
-      referrerPolicy: 'no-referrer',
-      signal: controller.signal,
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        messages: [
-          { role: 'system', content: EXTRACTION_INSTRUCTION },
-          { role: 'user', content: [
-            { type: 'text', text: 'Extract the populated form fields from this image and return JSON.' },
-            { type: 'image_url', image_url: { url: image } },
-          ] },
-        ],
-        response_format: { type: 'json_object' },
-        stream: false,
-        temperature: 0,
-        max_completion_tokens: 4096,
-        top_p: 1,
-        seed: 42,
-        reasoning_effort: 'default',
-      }),
+    const result = await getPuterAI().img2txt(image, {
+      model: PUTER_MODEL,
+      provider: PUTER_PROVIDER,
+      documentAnnotationPrompt: EXTRACTION_INSTRUCTION,
+      documentAnnotationFormat: DOCUMENT_ANNOTATION_FORMAT,
+      testMode: false,
     });
-    if (controller.signal.aborted) throw timedOut ? timeoutError() : cancellationError();
-    if (!response.ok) throw providerError(response.status);
-    let completion: unknown;
-    try {
-      completion = await response.json() as unknown;
-    } catch {
-      throw invalidExtraction();
-    }
-    if (controller.signal.aborted) throw timedOut ? timeoutError() : cancellationError();
-    if (!isRecord(completion) || !Array.isArray(completion.choices)) throw invalidExtraction();
-    const choice: unknown = completion.choices[0];
-    if (!isRecord(choice) || choice.finish_reason === 'length' || choice.finish_reason === 'content_filter'
-        || !isRecord(choice.message) || typeof choice.message.content !== 'string') {
-      throw invalidExtraction();
-    }
-    return normalizeExtraction(choice.message.content);
+    if (signal?.aborted) throw cancellationError();
+    if (typeof result !== 'string') throw invalidExtraction();
+    return normalizeExtraction(result);
   };
 
   try {
-    // Recheck after listener registration so an already-aborted signal never starts a request.
+    // Recheck after listener registration so an already-aborted signal never starts a call.
     if (signal?.aborted) {
       cancelled = true;
-      controller.abort();
       throw cancellationError();
     }
     return await Promise.race([request(), interrupted]);
@@ -437,7 +441,7 @@ export async function extractForm({ image, apiKey, signal }: {
     if (timedOut) throw timeoutError();
     if (cancelled || signal?.aborted) throw cancellationError();
     if (error instanceof ExtractionError) throw error;
-    throw new ExtractionError('PROVIDER_CONNECTION_ERROR', 'Could not connect to Groq. Check your internet connection and whether your browser or network blocks the request (CORS), then try again.');
+    throw puterError(error);
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener('abort', onAbort);

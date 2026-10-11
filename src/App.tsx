@@ -6,7 +6,7 @@ import {
   LoaderCircle, PanelLeftClose, RotateCcw, ScanLine,
   Sparkles, Upload, UserRound, X,
 } from 'lucide-react';
-import { extractForm } from './lib/groq';
+import { extractForm, PUTER_MODEL, PUTER_PROVIDER } from './lib/puter';
 import type { ExtractedField, ExtractionResult, FormImage } from './types';
 
 const MAX_FILE_SIZE = 8 * 1024 * 1024;
@@ -115,7 +115,6 @@ function layoutFields(sectionFields: ExtractedField[]) {
 }
 
 export default function App() {
-  const apiKey = import.meta.env.VITE_GROQ_API_KEY?.trim() ?? '';
   const [image, setImage] = useState<FormImage | null>(null);
   const [result, setResult] = useState<ExtractionResult | null>(null);
   const [fields, setFields] = useState<ExtractedField[]>([]);
@@ -205,15 +204,15 @@ export default function App() {
   }
 
   async function extract() {
-    if (!image || image.source === 'demo' || !apiKey.trim() || loading || reading) return;
+    if (!image || image.source === 'demo' || loading || reading) return;
     const version = invalidateRequest();
     const controller = new AbortController();
     requestRef.current = controller;
     resetResults();
     setLoading(true);
     try {
-      const data = await extractForm({ image: image.url, apiKey: apiKey.trim(), signal: controller.signal });
-      if (!validResult(data)) throw new Error('Groq returned an unexpected result. Please try again.');
+      const data = await extractForm({ image: image.url, signal: controller.signal });
+      if (!validResult(data)) throw new Error('Puter returned an unexpected result. Please try again.');
       if (version !== versionRef.current || controller.signal.aborted) return;
       setResult(data);
       setFields(prepareFields(data.fields));
@@ -310,7 +309,7 @@ export default function App() {
         <main id="main" className="main-content">
           <section className="page-heading"><div><div className="eyebrow"><span /> A LITTLE AI. A LOT LESS TYPING.</div><h1>Your forms. Now in focus<span>.</span></h1><p>From a photo to organized information, in just a few clicks.</p></div><button className="button demo-button" onClick={loadDemo}><Sparkles size={16} />Try a demo<ArrowRight size={15} /></button></section>
 
-          {showGuide && <section className="guide-panel" aria-label="How it works"><div><span className="step-mini">1</span><strong>Upload your form</strong><p>Use a clear, well-lit JPG, PNG, or WebP image. Uploading creates a local preview.</p></div><div><span className="step-mini">2</span><strong>Extract with AI</strong><p>The Groq API key is already configured. Choose Extract to send the base64 image directly from your browser to Groq.</p></div><div><span className="step-mini">3</span><strong>Make it yours</strong><p>Review the details, edit any field, then copy or download.</p></div><button className="icon-button" aria-label="Close guide" onClick={() => setShowGuide(false)}><X size={17} /></button></section>}
+          {showGuide && <section className="guide-panel" aria-label="How it works"><div><span className="step-mini">1</span><strong>Upload your form</strong><p>Use a clear, well-lit JPG, PNG, or WebP image. Uploading creates a local preview.</p></div><div><span className="step-mini">2</span><strong>Extract with Puter</strong><p>Choose Extract to send the base64 image to Puter OCR. Puter handles authentication and usage.</p></div><div><span className="step-mini">3</span><strong>Make it yours</strong><p>Review the details, edit any field, then copy or download.</p></div><button className="icon-button" aria-label="Close guide" onClick={() => setShowGuide(false)}><X size={17} /></button></section>}
 
           <div className="workflow-bar"><div className="workflow-step current"><span>01</span>Upload a form</div><div className="workflow-line" /><div className={`workflow-step ${result ? 'current' : ''}`}><span>02</span>Review & refine</div><div className="workflow-line" /><div className={`workflow-step ${result ? 'ready' : ''}`}><span>03</span>Make it useful</div><span className="workflow-caption">Simple by design.</span></div>
 
@@ -327,8 +326,9 @@ export default function App() {
                 {image && <div className="file-row"><span className="file-icon"><FileImage size={18} /></span><div className="file-details"><strong title={image.name}>{image.name}</strong><span>{demo ? 'Local sample · No upload required' : `${formatSize(image.size)} · Image ready to extract`}</span></div><button className="icon-button" onClick={() => inputRef.current?.click()} aria-label="Replace image" title="Replace image"><RotateCcw size={16} /></button><button className="icon-button" onClick={removeImage} aria-label="Remove image" title="Remove image"><X size={17} /></button></div>}
                 {!image && !reading && <div className="sample-prompt"><span>Just looking around?</span><button onClick={loadDemo}>Try our sample form <ArrowRight size={13} /></button></div>}
                 {error && <div className="notice error-notice" role="alert"><CircleHelp size={17} /><span>{error}</span><button className="icon-button" onClick={() => setError('')} aria-label="Dismiss error"><X size={15} /></button></div>}
-                {demo ? <div className="demo-notice"><Sparkles size={16} /><span><strong>You're exploring the demo.</strong> These fictional results are prepared locally. No API key is needed. Upload your own image to extract a real form.</span></div> : <button className="button extract-button" onClick={() => void extract()} disabled={!image || !apiKey.trim() || loading || reading}>{loading ? <LoaderCircle size={18} className="spin" /> : <Sparkles size={18} />}{loading ? 'Reading your form…' : 'Extract information'}{!loading && <ArrowRight size={17} />}</button>}
-                <p className="privacy-note"><FileImage size={14} /><span>Your base64 image goes directly from your browser to Groq only when you click Extract. Review AI results before using them.</span></p>
+                {demo ? <div className="demo-notice"><Sparkles size={16} /><span><strong>You're exploring the demo.</strong> These fictional results are prepared locally. Upload your own image to run Puter OCR.</span></div> : <button className="button extract-button" onClick={() => void extract()} disabled={!image || loading || reading}>{loading ? <LoaderCircle size={18} className="spin" /> : <Sparkles size={18} />}{loading ? 'Reading your form…' : 'Extract with Puter'}{!loading && <ArrowRight size={17} />}</button>}
+                <p className="privacy-note"><FileImage size={14} /><span>Your base64 image is sent to Puter only when you click Extract. Review AI results before using them.</span></p>
+                <p className="model-note">OCR model: <code>{PUTER_MODEL}</code> · Provider: <code>{PUTER_PROVIDER}</code></p>
               </div>
             </section>
 
